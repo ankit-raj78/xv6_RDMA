@@ -1,18 +1,57 @@
-*~
-_*
+# .gitignore for xv6 RDMA Project
+
+# xv6 Build Artifacts
 *.o
 *.d
 *.asm
 *.sym
-*.img
-vectors.S
-bootblock
-entryother
-initcode
-initcode.out
-kernelmemfs
-mkfs
 kernel/kernel
-user/usys.S
+user/_*
+!user/*.c
+!user/*.h
+mkfs/mkfs
+fs.img
+*.log
+packets.pcap
+
+# GDB files
 .gdbinit
-TAGS
+core
+*.gdb
+
+# Editor Files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.sublime-*
+
+# OS Files
+.DS_Store
+Thumbs.db
+.AppleDouble
+.LSOverride
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+*.egg-info/
+
+# Temporary Files
+*.tmp
+*.bak
+*.backup
+*~
+
+# Logs
+*.log
+logs/
+
+# Test outputs
+test-output/
+benchmark-results/
