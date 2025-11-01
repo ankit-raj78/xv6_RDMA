@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  xv6-dev:
+    build: .
+    container_name: xv6-rdma-dev
+    volumes:
+      - .:/workspace/xv6_RDMA
+    working_dir: /workspace/xv6_RDMA
+    stdin_open: true
+    tty: true
+    environment:
+      - TOOLPREFIX=riscv64-linux-gnu-
+    command: /bin/bash

@@ -55,3 +55,7 @@ logs/
 # Test outputs
 test-output/
 benchmark-results/
+
+# Docker
+.docker/
+docker-*.log
