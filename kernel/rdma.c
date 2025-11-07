@@ -8,7 +8,6 @@
 #include "proc.h"
 #include "defs.h"
 #include "rdma.h"
-
 /* ============================================
  * GLOBAL STATE
  * ============================================ */
@@ -45,7 +44,7 @@ rdma_hw_init(void)
 {
     // Initialize MMIO pointer to kernel virtual address
     // E1000_RDMA_BASE is physical address, must add KERNBASE for kernel VA
-    rdma_regs = (volatile uint32 *)(E1000_RDMA_BASE + KERNBASE);
+    rdma_regs = (volatile uint32 *)E1000_RDMA_BASE;
     
     // Set MR table pointer to physical address of hardware-visible part
     uint64 mr_hw_va = (uint64)(&mr_table[0].hw);
@@ -102,8 +101,8 @@ rdma_hw_setup_qp(int qp_id, struct rdma_qp *qp)
     rdma_writereg(qp_base + E1000_QP_CQ_BASE, (uint32)qp->cq_paddr);
     rdma_writereg(qp_base + E1000_QP_CQ_SIZE, qp->cq_size);
     
-    printf("rdma_hw: QP %d configured (SQ: 0x%p/%d, CQ: 0x%p/%d)\n",
-           qp_id, qp->sq_paddr, qp->sq_size, qp->cq_paddr, qp->cq_size);
+    printf("rdma_hw: QP %d configured (SQ: 0x%lx/%d, CQ: 0x%lx/%d)\n",
+       qp_id, qp->sq_paddr, qp->sq_size, qp->cq_paddr, qp->cq_size);
 }
 
 /* Ring doorbell - tell hardware new work is available */
@@ -160,8 +159,8 @@ rdma_mr_register(uint64 addr, uint64 len, int flags)
     
     // Check that address is in user space
     if (addr >= p->sz || addr + len > p->sz) {
-        printf("rdma_mr_register: address out of bounds (addr=0x%p, len=%d, sz=%d)\n",
-               addr, len, p->sz);
+        printf("rdma_mr_register: address out of bounds (addr=0x%lx, len=%ld, sz=%ld)\n",
+            addr, len, p->sz);
         return -1;
     }
 
@@ -170,8 +169,8 @@ rdma_mr_register(uint64 addr, uint64 len, int flags)
     uint64 end_page = PGROUNDDOWN(addr + len - 1);
     
     if (start_page != end_page) {
-        printf("rdma_mr_register: MR cannot cross page boundary (addr=0x%lx len=%d)\n",
-               addr, len);
+        printf("rdma_mr_register: MR cannot cross page boundary (addr=0x%lx len=%ld)\n",
+            addr, len);
         printf("  Start page: 0x%lx, End page: 0x%lx\n", start_page, end_page);
         return -1;
     }
@@ -223,8 +222,8 @@ rdma_mr_register(uint64 addr, uint64 len, int flags)
     
     release(&mr_lock);
     
-    printf("rdma_mr: registered MR %d for PID %d: vaddr=0x%p paddr=0x%p len=%d flags=0x%x\n",
-           mr_id, p->pid, addr, paddr, len, flags);
+    printf("rdma_mr: registered MR %d for PID %d: vaddr=0x%lx paddr=0x%lx len=%ld flags=0x%x\n",
+        mr_id, p->pid, addr, paddr, len, flags);
     
     return mr_id;
 }
@@ -759,6 +758,14 @@ rdma_qp_connect(int qp_id, uint8 mac[6], uint32 remote_qp)
 }
 
 /* ============================================
+ * KERNEL-SPACE UNIT TESTS
+ * ============================================ */
+
+#ifdef RDMA_TESTING
+#include "rdma_test.h"
+#endif
+
+/* ============================================
  * INITIALIZATION
  * ============================================ */
 
@@ -773,4 +780,9 @@ rdma_init(void)
     rdma_hw_enable();
     
     printf("rdma: initialization complete\n");
+    
+#ifdef RDMA_TESTING
+    // Run kernel tests immediately after initialization
+    rdma_run_kernel_tests();
+#endif
 }

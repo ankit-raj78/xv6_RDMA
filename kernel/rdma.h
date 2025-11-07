@@ -167,7 +167,7 @@ int rdma_qp_connect(int qp_id, uint8 mac[6], uint32 remote_qp);
  * ============================================ */
 
 /* Base address for RDMA registers in E1000 NIC */
-#define E1000_RDMA_BASE 0x40005800UL // TODO: check the actual address
+#define E1000_RDMA_BASE E1000_MMIO
 
 /* Register offsets (must match QEMU implementation) */
 #define E1000_RDMA_CTRL    0x00  // Control register
