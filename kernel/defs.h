@@ -8,6 +8,7 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+struct mbuf;
 
 // bio.c
 void            binit(void);
@@ -180,6 +181,15 @@ void            plic_complete(int);
 void            virtio_disk_init(void);
 void            virtio_disk_rw(struct buf *, int);
 void            virtio_disk_intr(void);
+
+// E1000 driver
+void            e1000_init(void);
+void            e1000_intr(void);
+int             e1000_transmit(struct mbuf *m);
+
+// net.c
+void            net_rx(struct mbuf *m);
+void            sockrecvudp(struct mbuf *m, uint32 sip, uint16 dport, uint16 sport); 
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

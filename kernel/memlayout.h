@@ -57,3 +57,13 @@
 //   TRAPFRAME (p->trapframe, used by the trampoline)
 //   TRAMPOLINE (the same page as in the kernel)
 #define TRAPFRAME (TRAMPOLINE - PGSIZE)
+
+// virtio mmio interface
+#define VIRTIO0 0x10001000
+#define VIRTIO0_IRQ 1
+
+// E1000 NIC (on PCI bus)
+// QEMU RISC-V virt machine places PCI devices in the PCI MMIO region
+// The E1000 device typically gets mapped at the start of PCI MMIO
+#define E1000_BASE 0x40000000L  // PCI MMIO region base
+#define E1000_IRQ 33             // PCI interrupt (PLIC IRQ 33 for PCI INTA)

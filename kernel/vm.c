@@ -32,6 +32,9 @@ kvmmake(void)
   // virtio mmio disk interface
   kvmmap(kpgtbl, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
 
+  // E1000 NIC registers (needs 128KB for register space)
+  kvmmap(kpgtbl, E1000_BASE, E1000_BASE, 0x20000, PTE_R | PTE_W);
+
   // PLIC
   kvmmap(kpgtbl, PLIC, PLIC, 0x4000000, PTE_R | PTE_W);
 
