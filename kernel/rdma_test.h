@@ -253,7 +253,7 @@ static int rdma_test_page_boundary(void)
     uint64 end4 = PGROUNDDOWN(addr4 + len4 - 1);
     printf("  Test 4: addr=0x%lx len=%ld -> start=0x%lx end=0x%lx\n", 
            addr4, len4, start4, end4);
-    RDMA_TEST_ASSERT(start4 != end4, "Full-page buffer crosses boundary");
+    RDMA_TEST_ASSERT(start4 == end4, "Full-page buffer should fit in one page");
     
     RDMA_TEST_PASS("Page Boundary Check");
 }
