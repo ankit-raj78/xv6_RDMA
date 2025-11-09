@@ -28,6 +28,7 @@ main()
     iinit();         // inode table
     fileinit();      // file table
     virtio_disk_init(); // emulated hard disk
+    rdma_init();      // initialize RDMA subsystem
     userinit();      // first user process
     __sync_synchronize();
     started = 1;
