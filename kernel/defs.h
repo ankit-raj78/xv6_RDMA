@@ -191,5 +191,8 @@ int             e1000_transmit(struct mbuf *m);
 void            net_rx(struct mbuf *m);
 void            sockrecvudp(struct mbuf *m, uint32 sip, uint16 dport, uint16 sport); 
 
+// rdma.c
+void            rdma_init(void);
+
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

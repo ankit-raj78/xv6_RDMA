@@ -48,6 +48,9 @@ kvmmake(void)
   // the highest virtual address in the kernel.
   kvmmap(kpgtbl, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
 
+  // E1000 RDMA MMIO (identity-map)
+  kvmmap(kpgtbl, E1000_MMIO, E1000_MMIO, E1000_MMIO_SIZE, PTE_R | PTE_W);
+
   // allocate and map a kernel stack for each process.
   proc_mapstacks(kpgtbl);
   
