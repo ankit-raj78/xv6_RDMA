@@ -31,7 +31,8 @@ OBJS = \
   $K/virtio_disk.o \
   $K/e1000.o \
   $K/net.o \
-  $K/rdma.o
+  $K/rdma.o \
+  $K/rdma_phase1_test.o
 
 # riscv64-unknown-elf- or riscv64-linux-gnu-
 # perhaps in /opt/riscv/bin
