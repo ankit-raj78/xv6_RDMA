@@ -163,46 +163,6 @@ int rdma_qp_poll_cq(int qp_id, struct rdma_completion *comp, int max_comps);
 int rdma_qp_connect(int qp_id, uint8 mac[6], uint32 remote_qp);
 
 /* ============================================
- * HARDWARE INTERFACE (E1000 RDMA Registers)
- * ============================================ */
-
-/* Base address for RDMA registers in E1000 NIC */
-#define E1000_RDMA_BASE E1000_MMIO
-
-/* Register offsets (must match QEMU implementation) */
-#define E1000_RDMA_CTRL    0x00  // Control register
-#define E1000_RDMA_STATUS  0x04  // Status register
-#define E1000_MR_TABLE_PTR 0x08  // MR table physical address
-#define E1000_MR_TABLE_LEN 0x0C  // MR table length
-
-/* Queue Pair register block */
-#define E1000_QP_BASE      0x100 // QP registers start
-#define E1000_QP_STRIDE    0x20  // 32 bytes per QP
-
-/* Per-QP register offsets (add to QP_BASE + qp_id*QP_STRIDE) */
-#define E1000_QP_SQ_BASE   0x00  // Send Queue base address
-#define E1000_QP_SQ_SIZE   0x08  // Send Queue size
-#define E1000_QP_SQ_HEAD   0x0C  // Send Queue head (read by kernel)
-#define E1000_QP_SQ_TAIL   0x10  // Send Queue tail (doorbell!)
-#define E1000_QP_CQ_BASE   0x14  // Completion Queue base
-#define E1000_QP_CQ_SIZE   0x18  // Completion Queue size
-#define E1000_QP_CQ_HEAD   0x1C  // Completion Queue head
-#define E1000_QP_CQ_TAIL   0x20  // Completion Queue tail
-
-/* Control register bits */
-#define RDMA_CTRL_ENABLE  (1 << 0)  // Enable RDMA
-#define RDMA_CTRL_RESET   (1 << 1)  // Reset RDMA state
-
-/* Status register bits */
-#define RDMA_STATUS_READY (1 << 0)  // RDMA ready
-
-/* Hardware interface functions */
-void rdma_hw_init(void);
-void rdma_hw_enable(void);
-void rdma_hw_setup_qp(int qp_id, struct rdma_qp *qp);
-void rdma_hw_ring_doorbell(int qp_id, uint32 sq_tail);
-
-/* ============================================
  * HELPER FUNCTIONS
  * ============================================ */
 

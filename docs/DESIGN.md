@@ -2,7 +2,7 @@
 
 ## Architecture Overview
 
-[Diagram to be added]
+This is a **software-only loopback** RDMA implementation for xv6. It provides RDMA semantics (memory registration, queue pairs, work requests, completions) without requiring QEMU modifications or network hardware simulation.
 
 ### System Layers
 ```
@@ -13,13 +13,25 @@
 +------------------+
 |  System Calls    |
 +------------------+
-|   RDMA Core      |  (kernel/rdma.c)
+|   RDMA Core      |  (kernel/rdma.c) - SOFTWARE LOOPBACK
 +------------------+
-|  E1000 Driver    |  (kernel/e1000.c)
-+------------------+
-|    Hardware      |
+| Virtual Memory   |  (kernel/vm.c)
 +------------------+
 ```
+
+### Key Design Decision: Software Loopback
+
+**Why Software-Only?**
+- Eliminates dependency on modified QEMU
+- Simplifies development and testing
+- Focuses on RDMA semantics rather than hardware emulation
+- Perfect for educational purposes and protocol development
+
+**How It Works:**
+1. RDMA operations (RDMA_WRITE) execute synchronously
+2. Memory copies happen directly via `memmove()`
+3. Completions are posted immediately to CQ
+4. No network packets, no DMA, no hardware registers
 
 ## Memory Registration
 
@@ -76,46 +88,41 @@ struct rdma_cq {
 ## RDMA Operations
 
 ### Supported Operations
-1. **RDMA_WRITE**: Write local memory to remote memory
-2. **RDMA_READ**: Read remote memory to local (simplified)
-3. **RDMA_SEND**: Send message (zero-copy)
+1. **RDMA_WRITE**: Write local memory to remote memory (synchronous, software)
+2. **RDMA_READ**: Not yet implemented
+3. **RDMA_SEND**: Not yet implemented
 
-### Packet Format
+### Operation Flow (Software Loopback)
 ```
-+----------------+
-| Ethernet Hdr   |
-+----------------+
-| RDMA Header    |
-| - opcode       |
-| - rkey         |
-| - remote_addr  |
-| - length       |
-+----------------+
-| Data           |
-+----------------+
+1. User calls rdma_qp_post_send(qp, work_request)
+   ↓
+2. Kernel validates MRs and permissions
+   ↓  
+3. rdma_process_work_requests() executes immediately:
+   - Validates source and destination MRs
+   - Performs memmove(dst_paddr, src_paddr, length)
+   - Posts completion to CQ
+   ↓
+4. User calls rdma_qp_poll_cq() to get completion
 ```
 
-## E1000 Extensions
+### Simplifications vs Production RDMA
 
-### Modifications Required
-- Add RDMA descriptor format
-- Implement zero-copy DMA
-- Add RDMA packet handling
-- Support doorbell mechanism
-
-## Simplifications vs Production
-
-1. **Reliability**: Best-effort (no ACK/retry)
-2. **QP Types**: Single unified type (not RC/UC/UD)
-3. **Operations**: 3 core ops (not 10+)
-4. **Memory**: Static regions (no dynamic windows)
-5. **Atomics**: Not implemented
-6. **Connection**: Simplified management
+| Feature | Production RDMA | This Implementation |
+|---------|----------------|---------------------|
+| Network | Real packets over Ethernet | No network, local only |
+| DMA | Hardware DMA engines | Software memcpy/memmove |
+| Async Processing | Hardware processes WRs async | Synchronous execution |
+| Reliability | ACK/NAK, retry logic | Best-effort, no retry |
+| QP Types | RC, UC, UD | Single unified type |
+| Operations | 10+ opcodes | RDMA_WRITE only |
+| Atomics | Compare-and-swap, fetch-add | Not implemented |
+| QEMU | Modified E1000 emulation | No QEMU changes needed |
 
 ## Implementation Status
 
-- [ ] Memory Registration (Days 2-3)
-- [ ] Queue Pairs (Days 4-6)
-- [ ] Loopback RDMA (Day 7)
-- [ ] Network RDMA (Days 8-11)
+- [x] Memory Registration (Days 2-3)
+- [x] Queue Pairs (Days 4-6)
+- [x] Software Loopback RDMA WRITE (Day 7)
+- [ ] Network RDMA (Days 8-11) - Not applicable in software mode
 - [ ] Additional Operations (Day 12)

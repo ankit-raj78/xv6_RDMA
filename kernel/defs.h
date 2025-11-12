@@ -194,8 +194,5 @@ void            sockrecvudp(struct mbuf *m, uint32 sip, uint16 dport, uint16 spo
 // rdma.c
 void            rdma_init(void);
 
-// rdma_phase1_test.c
-void            run_rdma_phase1_tests(void);
-
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

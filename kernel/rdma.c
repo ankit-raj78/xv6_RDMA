@@ -18,99 +18,117 @@ struct spinlock mr_lock;
 struct rdma_qp qp_table[MAX_QPS];
 struct spinlock qp_lock;
 
-static volatile uint32 *rdma_regs;  // Will be initialized in rdma_hw_init()
-
 /* ============================================
- * HARDWARE ACCESS FUNCTIONS
+ * SOFTWARE LOOPBACK IMPLEMENTATION
  * ============================================ */
 
-/* Write to RDMA register */
-static inline void
-rdma_writereg(uint32 offset, uint32 value)
+/* Process work requests in software (loopback mode)
+ * 
+ * This function replaces hardware processing. It:
+ * 1. Processes all pending work requests in the send queue
+ * 2. Performs memory operations directly (no DMA, no network)
+ * 3. Posts completions to the completion queue
+ * 
+ * This is a simplified software-only approach that doesn't require
+ * QEMU modifications. Perfect for local testing and development.
+ */
+static void
+rdma_process_work_requests(int qp_id, struct rdma_qp *qp)
 {
-    rdma_regs[offset / 4] = value;
-}
-
-/* Read from RDMA register */
-static inline uint32
-rdma_readreg(uint32 offset)
-{
-    return rdma_regs[offset / 4];
-}
-
-/* Initialize hardware interface */
-void
-rdma_hw_init(void)
-{
-    // Initialize MMIO pointer to kernel virtual address
-    // E1000_RDMA_BASE is physical address, must add KERNBASE for kernel VA
-    rdma_regs = (volatile uint32 *)E1000_RDMA_BASE;
-    
-    // Set MR table pointer to physical address of hardware-visible part
-    uint64 mr_hw_va = (uint64)(&mr_table[0].hw);
-    uint64 mr_table_pa;
-    
-    // Convert kernel virtual address to physical
-    if (mr_hw_va >= KERNBASE) {
-        mr_table_pa = mr_hw_va - KERNBASE;
-    } else {
-        panic("rdma_hw_init: MR table not in kernel space");
+    // Process all pending work requests
+    while (qp->sq_head != qp->sq_tail) {
+        struct rdma_work_request *wr = &qp->sq[qp->sq_head];
+        
+        // Validate source MR
+        struct rdma_mr *src_mr = rdma_mr_get(wr->local_mr_id);
+        if (!src_mr) {
+            // Post error completion
+            struct rdma_completion comp = {
+                .wr_id = wr->wr_id,
+                .byte_len = 0,
+                .status = RDMA_WC_LOC_PROT_ERR,
+                .opcode = wr->opcode,
+                .reserved = 0
+            };
+            qp->cq[qp->cq_tail] = comp;
+            qp->cq_tail = (qp->cq_tail + 1) % qp->cq_size;
+            qp->stats_errors++;
+            goto next_wr;
+        }
+        
+        // Process based on opcode
+        uint8 status = RDMA_WC_SUCCESS;
+        
+        switch (wr->opcode) {
+        case RDMA_OP_WRITE: {
+            // Validate destination MR
+            struct rdma_mr *dst_mr = rdma_mr_get(wr->remote_mr_id);
+            if (!dst_mr) {
+                status = RDMA_WC_REM_ACCESS_ERR;
+                break;
+            }
+            
+            // Check destination bounds
+            if (wr->remote_addr + wr->length > dst_mr->hw.length) {
+                status = RDMA_WC_REM_INV_REQ;
+                break;
+            }
+            
+            // Perform software memory copy (local_offset already has physical address)
+            uint64 src_addr = wr->local_offset;
+            uint64 dst_addr = dst_mr->hw.paddr + wr->remote_addr;
+            
+            // Copy memory directly (destination, source, length)
+            memmove((void *)dst_addr, (void *)src_addr, wr->length);
+            
+            break;
+        }
+        
+        case RDMA_OP_READ:
+            // Not yet implemented - return error
+            status = RDMA_WC_LOC_PROT_ERR;
+            break;
+            
+        case RDMA_OP_SEND:
+            // Not yet implemented - return error
+            status = RDMA_WC_LOC_PROT_ERR;
+            break;
+            
+        default:
+            status = RDMA_WC_LOC_PROT_ERR;
+            break;
+        }
+        
+        // Post completion if signaled or if error occurred
+        if ((wr->flags & RDMA_WR_SIGNALED) || (status != RDMA_WC_SUCCESS)) {
+            struct rdma_completion comp = {
+                .wr_id = wr->wr_id,
+                .byte_len = (status == RDMA_WC_SUCCESS) ? wr->length : 0,
+                .status = status,
+                .opcode = wr->opcode,
+                .reserved = 0
+            };
+            
+            qp->cq[qp->cq_tail] = comp;
+            qp->cq_tail = (qp->cq_tail + 1) % qp->cq_size;
+            
+            if (status == RDMA_WC_SUCCESS) {
+                qp->stats_completions++;
+            } else {
+                qp->stats_errors++;
+            }
+        }
+        
+        // Decrement MR refcount
+        acquire(&mr_lock);
+        src_mr->refcount--;
+        release(&mr_lock);
+        
+next_wr:
+        // Move to next work request
+        qp->sq_head = (qp->sq_head + 1) % qp->sq_size;
+        qp->outstanding_ops--;
     }
-    
-    // Validate physical address is reasonable
-    if (mr_table_pa == 0 || mr_table_pa >= PHYSTOP) {
-        panic("rdma_hw_init: invalid MR table physical address");
-    }
-    
-    rdma_writereg(E1000_MR_TABLE_PTR, (uint32)mr_table_pa);
-    rdma_writereg(E1000_MR_TABLE_LEN, MAX_MRS);
-    
-    printf("rdma_hw: MR table at PA 0x%lx, %d entries\n", mr_table_pa, MAX_MRS);
-}
-
-/* Enable RDMA in hardware */
-void
-rdma_hw_enable(void)
-{
-    rdma_writereg(E1000_RDMA_CTRL, RDMA_CTRL_ENABLE);
-    
-    // Wait for hardware to be ready (with timeout)
-    int timeout = 1000;
-    while (!(rdma_readreg(E1000_RDMA_STATUS) & RDMA_STATUS_READY) && timeout > 0) {
-        timeout--;
-    }
-    
-    if (timeout == 0) {
-        panic("rdma_hw: hardware failed to initialize");
-    }
-    
-    printf("rdma_hw: hardware enabled and ready\n");
-}
-
-/* Configure hardware for a queue pair */
-void
-rdma_hw_setup_qp(int qp_id, struct rdma_qp *qp)
-{
-    uint32 qp_base = E1000_QP_BASE + qp_id * E1000_QP_STRIDE;
-    
-    // Write Send Queue configuration
-    rdma_writereg(qp_base + E1000_QP_SQ_BASE, (uint32)qp->sq_paddr);
-    rdma_writereg(qp_base + E1000_QP_SQ_SIZE, qp->sq_size);
-    
-    // Write Completion Queue configuration
-    rdma_writereg(qp_base + E1000_QP_CQ_BASE, (uint32)qp->cq_paddr);
-    rdma_writereg(qp_base + E1000_QP_CQ_SIZE, qp->cq_size);
-    
-    printf("rdma_hw: QP %d configured (SQ: 0x%lx/%d, CQ: 0x%lx/%d)\n",
-       qp_id, qp->sq_paddr, qp->sq_size, qp->cq_paddr, qp->cq_size);
-}
-
-/* Ring doorbell - tell hardware new work is available */
-void
-rdma_hw_ring_doorbell(int qp_id, uint32 sq_tail)
-{
-    uint32 qp_base = E1000_QP_BASE + qp_id * E1000_QP_STRIDE;
-    rdma_writereg(qp_base + E1000_QP_SQ_TAIL, sq_tail);
 }
 
 /* ============================================
@@ -419,9 +437,6 @@ rdma_qp_create(uint32 sq_size, uint32 cq_size)
     qp->stats_completions = 0;
     qp->stats_errors = 0;
     
-    // Configure hardware
-    rdma_hw_setup_qp(qp_id, qp);
-    
     // Transition to READY state
     qp->state = QP_STATE_READY;
     
@@ -586,11 +601,11 @@ rdma_qp_post_send(int qp_id, struct rdma_work_request *wr)
     qp->outstanding_ops++;
     qp->stats_sends++;
     
-    // Ensure SQ write is visible to hardware before ringing doorbell
+    // Ensure SQ write is visible before processing
     __sync_synchronize();
     
-    // Ring doorbell - tells hardware to process the new work
-    rdma_hw_ring_doorbell(qp_id, qp->sq_tail);
+    // Process work requests immediately in software
+    rdma_process_work_requests(qp_id, qp);
     
     release(&qp_lock);
     
@@ -598,6 +613,9 @@ rdma_qp_post_send(int qp_id, struct rdma_work_request *wr)
 }
 
 /* Poll completion queue for completed operations
+ * 
+ * In software loopback mode, this is simplified since work requests
+ * are processed synchronously in rdma_qp_post_send.
  * 
  * Returns: number of completions found (0 to max_comps), -1 on error
  */
@@ -609,15 +627,6 @@ rdma_qp_poll_cq(int qp_id, struct rdma_completion *comp_array, int max_comps)
         return -1;
     }
     
-    uint32 qp_base = E1000_QP_BASE + qp_id * E1000_QP_STRIDE;
-    
-    // *** CRITICAL: Array to collect MR IDs for later processing ***
-    uint32 mr_ids_to_decrement[DEFAULT_SQ_SIZE];
-    int num_to_decrement = 0;
-    
-    // ==========================================
-    // STEP 1: Process queues (holding qp_lock)
-    // ==========================================
     acquire(&qp_lock);
     
     struct rdma_qp *qp = &qp_table[qp_id];
@@ -628,44 +637,13 @@ rdma_qp_poll_cq(int qp_id, struct rdma_completion *comp_array, int max_comps)
         return -1;
     }
     
-    // --- Part A: Reap Send Queue ---
-    uint32 hw_sq_head = rdma_readreg(qp_base + E1000_QP_SQ_HEAD);
-    
-    // Validate hardware value
-    if (hw_sq_head >= qp->sq_size) {
-        printf("rdma_qp_poll_cq: invalid SQ head %d\n", hw_sq_head);
-        hw_sq_head = hw_sq_head % qp->sq_size;
-    }
-    
-    // *** CRITICAL FIX: Just collect MR IDs, DON'T acquire mr_lock here! ***
-    while (qp->sq_head != hw_sq_head) {
-        struct rdma_work_request *consumed_wr = &qp->sq[qp->sq_head];
-        uint32 mr_id = consumed_wr->local_mr_id;
-        
-        // Store MR ID for later processing (no lock needed)
-        if (mr_id >= 1 && mr_id <= MAX_MRS && num_to_decrement < DEFAULT_SQ_SIZE) {
-            mr_ids_to_decrement[num_to_decrement++] = mr_id;
-        }
-        
-        qp->sq_head = (qp->sq_head + 1) % qp->sq_size;
-    }
-    
-    // --- Part B: Poll Completion Queue ---
-    uint32 hw_tail = rdma_readreg(qp_base + E1000_QP_CQ_TAIL);
-    
-    // Validate hardware value
-    if (hw_tail >= qp->cq_size) {
-        printf("rdma_qp_poll_cq: invalid CQ tail %d\n", hw_tail);
-        hw_tail = hw_tail % qp->cq_size;
-    }
-    
-    // *** NEW: Memory barrier to ensure we see latest CQ data ***
+    // Memory barrier to ensure we see latest CQ data
     __sync_synchronize();
     
     int n = 0;
     
     // Copy completions from CQ to user buffer
-    while (qp->cq_head != hw_tail && n < max_comps) {
+    while (qp->cq_head != qp->cq_tail && n < max_comps) {
         comp_array[n] = qp->cq[qp->cq_head];
         
         // Update statistics
@@ -675,40 +653,11 @@ rdma_qp_poll_cq(int qp_id, struct rdma_completion *comp_array, int max_comps)
             qp->stats_errors++;
         }
         
-        // Decrement outstanding operations
-        if (qp->outstanding_ops > 0) {
-            qp->outstanding_ops--;
-        }
-        
         qp->cq_head = (qp->cq_head + 1) % qp->cq_size;
         n++;
     }
     
-    // Update hardware CQ head
-    if (n > 0) {
-        rdma_writereg(qp_base + E1000_QP_CQ_HEAD, qp->cq_head);
-    }
-    
-    // *** CRITICAL: Release qp_lock BEFORE acquiring mr_lock ***
     release(&qp_lock);
-    
-    // ==========================================
-    // STEP 2: Decrement MR refcounts (holding ONLY mr_lock)
-    // ==========================================
-    if (num_to_decrement > 0) {
-        acquire(&mr_lock);
-        
-        for (int i = 0; i < num_to_decrement; i++) {
-            uint32 mr_id = mr_ids_to_decrement[i];
-            struct rdma_mr *mr = &mr_table[mr_id - 1];  // mr_id is 1-based
-            
-            if (mr->hw.valid && mr->refcount > 0) {
-                mr->refcount--;
-            }
-        }
-        
-        release(&mr_lock);
-    }
     
     return n;
 }
@@ -772,12 +721,10 @@ rdma_qp_connect(int qp_id, uint8 mac[6], uint32 remote_qp)
 void
 rdma_init(void)
 {
-    printf("rdma: initializing subsystem\n");
+    printf("rdma: initializing subsystem (software loopback mode)\n");
     
     rdma_mr_init();
     rdma_qp_init();
-    rdma_hw_init();
-    rdma_hw_enable();
     
     printf("rdma: initialization complete\n");
     

@@ -30,10 +30,6 @@ main()
     virtio_disk_init(); // emulated hard disk
     e1000_init();      // initialize E1000 network device
     rdma_init();      // initialize RDMA subsystem
-    
-    // Run Phase 1 RDMA tests (QEMU verification)
-    run_rdma_phase1_tests();
-    
     userinit();      // first user process
     __sync_synchronize();
     started = 1;

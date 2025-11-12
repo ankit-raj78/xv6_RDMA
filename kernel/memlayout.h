@@ -47,10 +47,6 @@
 // each surrounded by invalid guard pages.
 #define KSTACK(p) (TRAMPOLINE - ((p)+1)* 2*PGSIZE)
 
-// E1000 RDMA MMIO region (identity-mapped)
-#define E1000_MMIO       0x40000000L
-#define E1000_MMIO_SIZE  0x20000
-
 // User memory layout.
 // Address zero first:
 //   text
