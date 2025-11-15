@@ -14,8 +14,7 @@ plicinit(void)
   // set desired IRQ priorities non-zero (otherwise disabled).
   *(uint32*)(PLIC + UART0_IRQ*4) = 1;
   *(uint32*)(PLIC + VIRTIO0_IRQ*4) = 1;
-  // TODO: E1000_IRQ (PCI interrupts require more complex setup)
-  // *(uint32*)(PLIC + E1000_IRQ*4) = 1;
+  *(uint32*)(PLIC + E1000_IRQ*4) = 1;  // E1000 interrupt
 }
 
 void
@@ -26,7 +25,8 @@ plicinithart(void)
   // set enable bits for this hart's S-mode
   // for the uart and virtio disk.
   *(uint32*)PLIC_SENABLE(hart) = (1 << UART0_IRQ) | (1 << VIRTIO0_IRQ);
-  // TODO: E1000_IRQ enable (requires second enable register for IRQ 33)
+  // E1000_IRQ is 33, which is in the second enable register (bits 32-63)
+  *(uint32*)(PLIC_SENABLE(hart) + 4) = (1 << (E1000_IRQ - 32));
   
   // set this hart's S-mode priority threshold to 0.
   *(uint32*)PLIC_SPRIORITY(hart) = 0;

@@ -9,6 +9,8 @@ struct sleeplock;
 struct stat;
 struct superblock;
 struct mbuf;
+struct rdma_qp;
+struct rdma_work_request;
 
 // bio.c
 void            binit(void);
@@ -185,14 +187,24 @@ void            virtio_disk_intr(void);
 // E1000 driver
 void            e1000_init(void);
 void            e1000_intr(void);
+void            e1000_recv(void);
 int             e1000_transmit(struct mbuf *m);
+void            e1000_get_mac(uint8 mac[6]);
 
 // net.c
+void            net_init(void);
 void            net_rx(struct mbuf *m);
 void            sockrecvudp(struct mbuf *m, uint32 sip, uint16 dport, uint16 sport); 
 
 // rdma.c
 void            rdma_init(void);
+
+// rdma_net.c
+void            rdma_net_init(void);
+void            rdma_net_rx(struct mbuf*, uint8*);
+int             rdma_net_tx_write(struct rdma_qp*, struct rdma_work_request*);
+void            rdma_net_tx_ack(struct rdma_qp*, uint16, uint32, uint8*);
+
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

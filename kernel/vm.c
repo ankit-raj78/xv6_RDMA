@@ -32,6 +32,9 @@ kvmmake(void)
   // virtio mmio disk interface
   kvmmap(kpgtbl, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
 
+  // PCIe ECAM (configuration space) - 256MB for all buses/devices/functions
+  kvmmap(kpgtbl, PCIE_ECAM, PCIE_ECAM, 0x10000000, PTE_R | PTE_W);
+
   // E1000 NIC registers (needs 128KB for register space)
   kvmmap(kpgtbl, E1000_BASE, E1000_BASE, 0x20000, PTE_R | PTE_W);
 

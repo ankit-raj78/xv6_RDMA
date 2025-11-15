@@ -12,8 +12,19 @@
 #include "defs.h"
 
 static uint32 local_ip = MAKE_IP_ADDR(10, 0, 2, 15); // qemu's idea of the guest IP
-static uint8 local_mac[ETHADDR_LEN] = { 0x52, 0x54, 0x00, 0x12, 0x34, 0x56 };
+static uint8 local_mac[ETHADDR_LEN]; // Will be initialized from E1000
 static uint8 broadcast_mac[ETHADDR_LEN] = { 0xFF, 0XFF, 0XFF, 0XFF, 0XFF, 0XFF };
+
+// Initialize network layer - must be called after e1000_init()
+void
+net_init(void)
+{
+  // Get MAC address from E1000 NIC
+  e1000_get_mac(local_mac);
+  printf("net: initialized with MAC %x:%x:%x:%x:%x:%x\n",
+         local_mac[0], local_mac[1], local_mac[2],
+         local_mac[3], local_mac[4], local_mac[5]);
+}
 
 // Strips data from the start of the buffer and returns a pointer to it.
 // Returns 0 if less than the full requested length is available.
@@ -364,11 +375,21 @@ void net_rx(struct mbuf *m)
     return;
   }
 
+  // Save source MAC before processing
+  uint8 src_mac[6];
+  memmove(src_mac, ethhdr->shost, 6);
+
   type = ntohs(ethhdr->type);
+  printf("net_rx: received packet type=0x%x\n", type);
+  
   if (type == ETHTYPE_IP)
     net_rx_ip(m);
   else if (type == ETHTYPE_ARP)
     net_rx_arp(m);
+  else if (type == ETHTYPE_RDMA) {
+    printf("net_rx: routing to rdma_net_rx\n");
+    rdma_net_rx(m, src_mac);
+  }
   else
     mbuffree(m);
 }

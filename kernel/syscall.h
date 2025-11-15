@@ -20,3 +20,12 @@
 #define SYS_link   19
 #define SYS_mkdir  20
 #define SYS_close  21
+
+// RDMA system calls
+#define SYS_rdma_reg_mr     22
+#define SYS_rdma_dereg_mr   23
+#define SYS_rdma_create_qp  24
+#define SYS_rdma_destroy_qp 25
+#define SYS_rdma_post_send  26
+#define SYS_rdma_poll_cq    27
+#define SYS_rdma_connect    28

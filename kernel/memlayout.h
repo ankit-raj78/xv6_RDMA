@@ -63,7 +63,9 @@
 #define VIRTIO0_IRQ 1
 
 // E1000 NIC (on PCI bus)
-// QEMU RISC-V virt machine places PCI devices in the PCI MMIO region
-// The E1000 device typically gets mapped at the start of PCI MMIO
-#define E1000_BASE 0x40000000L  // PCI MMIO region base
+// QEMU virt machine: PCIe ECAM is at 0x30000000, size 0x10000000
+// E1000 typically appears at bus 0, device 1, function 0
+// BAR0 (memory mapped registers) will be allocated by firmware/QEMU
+#define PCIE_ECAM 0x30000000L
+#define E1000_BASE 0x40000000L  // PCI MMIO region base (BAR0, set by QEMU)
 #define E1000_IRQ 33             // PCI interrupt (PLIC IRQ 33 for PCI INTA)

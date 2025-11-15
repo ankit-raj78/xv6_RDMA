@@ -29,7 +29,9 @@ main()
     fileinit();      // file table
     virtio_disk_init(); // emulated hard disk
     e1000_init();      // initialize E1000 network device
+    net_init();        // initialize network layer (get MAC from E1000)
     rdma_init();      // initialize RDMA subsystem
+    rdma_net_init();  // initialize RDMA network layer
     userinit();      // first user process
     __sync_synchronize();
     started = 1;

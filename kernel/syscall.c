@@ -102,6 +102,15 @@ extern uint64 sys_link(void);
 extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
 
+// RDMA system calls
+extern uint64 sys_rdma_reg_mr(void);
+extern uint64 sys_rdma_dereg_mr(void);
+extern uint64 sys_rdma_create_qp(void);
+extern uint64 sys_rdma_destroy_qp(void);
+extern uint64 sys_rdma_post_send(void);
+extern uint64 sys_rdma_poll_cq(void);
+extern uint64 sys_rdma_connect(void);
+
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
 static uint64 (*syscalls[])(void) = {
@@ -126,6 +135,13 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_rdma_reg_mr]     sys_rdma_reg_mr,
+[SYS_rdma_dereg_mr]   sys_rdma_dereg_mr,
+[SYS_rdma_create_qp]  sys_rdma_create_qp,
+[SYS_rdma_destroy_qp] sys_rdma_destroy_qp,
+[SYS_rdma_post_send]  sys_rdma_post_send,
+[SYS_rdma_poll_cq]    sys_rdma_poll_cq,
+[SYS_rdma_connect]    sys_rdma_connect,
 };
 
 void

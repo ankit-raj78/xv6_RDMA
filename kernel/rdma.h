@@ -78,7 +78,8 @@ struct rdma_mr* rdma_mr_get(int mr_id);
 enum rdma_qp_state {
     QP_STATE_RESET = 0,          // Initial state, not configured
     QP_STATE_INIT,               // Allocated, being configured
-    QP_STATE_READY,              // Ready for operations
+    QP_STATE_RTR,                // Ready To Receive (connected)
+    QP_STATE_RTS,                // Ready To Send (can transmit)
     QP_STATE_ERROR               // Error state, needs reset
 };
 
@@ -141,6 +142,16 @@ struct rdma_qp {
     uint8 remote_mac[6];                 // Destination MAC address
     uint32 remote_qp_num;                // Remote QP to target
     int connected;                       // 0 = not connected, 1 = connected
+    int network_mode;                    // 0 = loopback, 1 = network
+    uint32 tx_seq_num;                   // Next TX sequence number
+    uint32 rx_expected_seq;              // Expected RX sequence number
+    
+    /* Pending ACKs (for matching completions) */
+    struct {
+        uint32 seq_num;
+        uint64 wr_id;
+        int valid;
+    } pending_acks[64];
     
     /* Statistics and debugging (useful for evaluation phase) */
     uint32 stats_sends;                  // Total send operations posted

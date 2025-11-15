@@ -85,6 +85,7 @@ struct eth {
 
 #define ETHTYPE_IP  0x0800 // Internet protocol
 #define ETHTYPE_ARP 0x0806 // Address resolution protocol
+#define ETHTYPE_RDMA 0x8915 // RDMA protocol
 
 // an IP packet header (comes after an Ethernet header).
 struct ip {

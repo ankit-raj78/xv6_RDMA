@@ -42,3 +42,12 @@ entry("getpid");
 entry("sbrk");
 entry("pause");
 entry("uptime");
+
+# RDMA system calls
+entry("rdma_reg_mr");
+entry("rdma_dereg_mr");
+entry("rdma_create_qp");
+entry("rdma_destroy_qp");
+entry("rdma_post_send");
+entry("rdma_poll_cq");
+entry("rdma_connect");

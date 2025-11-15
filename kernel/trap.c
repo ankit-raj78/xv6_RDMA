@@ -169,6 +169,12 @@ clockintr()
     ticks++;
     wakeup(&ticks);
     release(&tickslock);
+    
+    // Poll E1000 RX as fallback in case interrupts don't work
+    // This polls every ~0.1 seconds (10 Hz)
+    if (ticks % 1 == 0) {
+      e1000_recv();
+    }
   }
 
   // ask for the next timer interrupt. this also clears

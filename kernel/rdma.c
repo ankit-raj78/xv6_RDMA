@@ -8,6 +8,7 @@
 #include "proc.h"
 #include "defs.h"
 #include "rdma.h"
+#include "rdma_net.h"
 /* ============================================
  * GLOBAL STATE
  * ============================================ */
@@ -56,66 +57,117 @@ rdma_process_work_requests(int qp_id, struct rdma_qp *qp)
             goto next_wr;
         }
         
-        // Process based on opcode
-        uint8 status = RDMA_WC_SUCCESS;
-        
-        switch (wr->opcode) {
-        case RDMA_OP_WRITE: {
-            // Validate destination MR
-            struct rdma_mr *dst_mr = rdma_mr_get(wr->remote_mr_id);
-            if (!dst_mr) {
-                status = RDMA_WC_REM_ACCESS_ERR;
+        // Check operation mode: network vs loopback
+        if (qp->network_mode && qp->state == QP_STATE_RTS) {
+            // Network mode: Send RDMA packet
+            switch (wr->opcode) {
+            case RDMA_OP_WRITE:
+                if (rdma_net_tx_write(qp, wr) < 0) {
+                    // Post error completion
+                    struct rdma_completion comp = {
+                        .wr_id = wr->wr_id,
+                        .byte_len = 0,
+                        .status = RDMA_WC_LOC_PROT_ERR,
+                        .opcode = wr->opcode,
+                    };
+                    qp->cq[qp->cq_tail] = comp;
+                    qp->cq_tail = (qp->cq_tail + 1) % qp->cq_size;
+                    qp->stats_errors++;
+                }
+                // Note: Completion will be posted when ACK is received
+                break;
+                
+            default:
+                // Unsupported opcode in network mode
+                break;
+            }
+        } else {
+            // Loopback mode: Use existing local processing
+            
+            // Process based on opcode
+            uint8 status = RDMA_WC_SUCCESS;
+            
+            switch (wr->opcode) {
+            case RDMA_OP_WRITE: {
+                // Validate destination MR
+                struct rdma_mr *dst_mr = rdma_mr_get(wr->remote_mr_id);
+                if (!dst_mr) {
+                    status = RDMA_WC_REM_ACCESS_ERR;
+                    break;
+                }
+                
+                // Check access permissions
+                if (!(dst_mr->hw.access_flags & RDMA_ACCESS_REMOTE_WRITE)) {
+                    status = RDMA_WC_REM_ACCESS_ERR;
+                    break;
+                }
+                
+                // remote_addr can be either:
+                // 1. An offset within the MR (when < length)
+                // 2. An absolute virtual address within the MR (when >= vaddr)
+                uint64 offset;
+                if (wr->remote_addr >= dst_mr->hw.vaddr && 
+                    wr->remote_addr < dst_mr->hw.vaddr + dst_mr->hw.length) {
+                    // Absolute address - convert to offset
+                    offset = wr->remote_addr - dst_mr->hw.vaddr;
+                } else if (wr->remote_addr < dst_mr->hw.length) {
+                    // Already an offset
+                    offset = wr->remote_addr;
+                } else {
+                    // Invalid address
+                    status = RDMA_WC_REM_INV_REQ;
+                    break;
+                }
+                
+                // Check destination bounds
+                if (offset + wr->length > dst_mr->hw.length) {
+                    status = RDMA_WC_REM_INV_REQ;
+                    break;
+                }
+                
+                // Perform software memory copy (local_offset already has physical address)
+                uint64 src_addr = wr->local_offset;
+                uint64 dst_addr = dst_mr->hw.paddr + offset;
+                
+                // Copy memory directly (destination, source, length)
+                memmove((void *)dst_addr, (void *)src_addr, wr->length);
+                
                 break;
             }
             
-            // Check destination bounds
-            if (wr->remote_addr + wr->length > dst_mr->hw.length) {
-                status = RDMA_WC_REM_INV_REQ;
+            case RDMA_OP_READ:
+                // Not yet implemented - return error
+                status = RDMA_WC_LOC_PROT_ERR;
+                break;
+                
+            case RDMA_OP_SEND:
+                // Not yet implemented - return error
+                status = RDMA_WC_LOC_PROT_ERR;
+                break;
+                
+            default:
+                status = RDMA_WC_LOC_PROT_ERR;
                 break;
             }
             
-            // Perform software memory copy (local_offset already has physical address)
-            uint64 src_addr = wr->local_offset;
-            uint64 dst_addr = dst_mr->hw.paddr + wr->remote_addr;
-            
-            // Copy memory directly (destination, source, length)
-            memmove((void *)dst_addr, (void *)src_addr, wr->length);
-            
-            break;
-        }
-        
-        case RDMA_OP_READ:
-            // Not yet implemented - return error
-            status = RDMA_WC_LOC_PROT_ERR;
-            break;
-            
-        case RDMA_OP_SEND:
-            // Not yet implemented - return error
-            status = RDMA_WC_LOC_PROT_ERR;
-            break;
-            
-        default:
-            status = RDMA_WC_LOC_PROT_ERR;
-            break;
-        }
-        
-        // Post completion if signaled or if error occurred
-        if ((wr->flags & RDMA_WR_SIGNALED) || (status != RDMA_WC_SUCCESS)) {
-            struct rdma_completion comp = {
-                .wr_id = wr->wr_id,
-                .byte_len = (status == RDMA_WC_SUCCESS) ? wr->length : 0,
-                .status = status,
-                .opcode = wr->opcode,
-                .reserved = 0
-            };
-            
-            qp->cq[qp->cq_tail] = comp;
-            qp->cq_tail = (qp->cq_tail + 1) % qp->cq_size;
-            
-            if (status == RDMA_WC_SUCCESS) {
-                qp->stats_completions++;
-            } else {
-                qp->stats_errors++;
+            // Post completion if signaled or if error occurred
+            if ((wr->flags & RDMA_WR_SIGNALED) || (status != RDMA_WC_SUCCESS)) {
+                struct rdma_completion comp = {
+                    .wr_id = wr->wr_id,
+                    .byte_len = (status == RDMA_WC_SUCCESS) ? wr->length : 0,
+                    .status = status,
+                    .opcode = wr->opcode,
+                    .reserved = 0
+                };
+                
+                qp->cq[qp->cq_tail] = comp;
+                qp->cq_tail = (qp->cq_tail + 1) % qp->cq_size;
+                
+                if (status == RDMA_WC_SUCCESS) {
+                    qp->stats_completions++;
+                } else {
+                    qp->stats_errors++;
+                }
             }
         }
         
@@ -437,8 +489,13 @@ rdma_qp_create(uint32 sq_size, uint32 cq_size)
     qp->stats_completions = 0;
     qp->stats_errors = 0;
     
-    // Transition to READY state
-    qp->state = QP_STATE_READY;
+    // Initialize network fields
+    qp->network_mode = 0;  // Start in loopback mode
+    qp->tx_seq_num = 0;
+    qp->rx_expected_seq = 0;
+    for (int i = 0; i < 64; i++) {
+        qp->pending_acks[i].valid = 0;
+    }
     
     release(&qp_lock);
     
@@ -564,14 +621,14 @@ rdma_qp_post_send(int qp_id, struct rdma_work_request *wr)
         return -1;
     }
     
-    // Check QP state
-    if (qp->state != QP_STATE_READY) {
+    // Check QP state - must be INIT (for loopback) or RTS (for network after connect)
+    if (qp->state != QP_STATE_INIT && qp->state != QP_STATE_RTR && qp->state != QP_STATE_RTS) {
         release(&qp_lock);
         // Undo refcount
         acquire(&mr_lock);
         mr->refcount--;
         release(&mr_lock);
-        printf("rdma_qp_post_send: QP %d not in READY state\n", qp_id);
+        printf("rdma_qp_post_send: QP %d not in valid state (state=%d)\n", qp_id, qp->state);
         return -1;
     }
     
@@ -679,29 +736,38 @@ rdma_qp_connect(int qp_id, uint8 mac[6], uint32 remote_qp)
     
     struct rdma_qp *qp = &qp_table[qp_id];
     
-    // Check ownership
+    // Validate QP exists and is owned by current process
     if (!qp->valid || qp->owner != myproc()) {
         release(&qp_lock);
         return -1;
     }
     
-    // Check state (must be INIT or READY)
-    if (qp->state != QP_STATE_INIT && qp->state != QP_STATE_READY) {
+    // QP must be in INIT state
+    if (qp->state != QP_STATE_INIT) {
         release(&qp_lock);
+        printf("rdma_qp_connect: QP %d not in INIT state (state=%d)\n", qp_id, qp->state);
         return -1;
     }
     
-    // Set connection parameters
-    for (int i = 0; i < 6; i++) {
-        qp->remote_mac[i] = mac[i];
-    }
+    // Store remote connection information
+    memmove(qp->remote_mac, mac, 6);
     qp->remote_qp_num = remote_qp;
+    qp->network_mode = 1;
     qp->connected = 1;
+    
+    // Initialize sequence numbers
+    qp->tx_seq_num = 1;
+    qp->rx_expected_seq = 1;
+    
+    // Transition to RTR (Ready To Receive) then immediately to RTS (Ready To Send)
+    // In a real RDMA implementation, RTR→RTS would be a separate step,
+    // but for our simple implementation we can do it immediately
+    qp->state = QP_STATE_RTS;
     
     release(&qp_lock);
     
-    printf("rdma_qp: QP %d connected to %02x:%02x:%02x:%02x:%02x:%02x QP %d\n",
-           qp_id, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], remote_qp);
+    printf("rdma_qp_connect: QP %d connected to remote QP %d (MAC: %x:%x:%x:%x:%x:%x)\n",
+           qp_id, remote_qp, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     
     return 0;
 }
